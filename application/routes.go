@@ -8,7 +8,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/jhondevcode/orders-api/handler"
-	"github.com/jhondevcode/orders-api/repository/order"
+	order "github.com/jhondevcode/orders-api/repository"
 )
 
 func (a *App) loadRoutes() {
@@ -26,7 +26,7 @@ func (a *App) loadRoutes() {
 
 func (a *App) loadOrderRoutes(router chi.Router) {
 	orderHandler := &handler.Order{
-		Repo: &order.RedisRepo{
+		Repo: &order.RedisRepository{
 			Client: a.rdb,
 		},
 	}

@@ -6,31 +6,21 @@ import (
 	"errors"
 	"fmt"
 
+	api_errors "github.com/jhondevcode/orders-api/errors"
 	"github.com/jhondevcode/orders-api/model"
+	"github.com/jhondevcode/orders-api/types"
 	"github.com/redis/go-redis/v9"
 )
 
-var ErrNotExist = errors.New("order does not exist")
-
-type RedisRepo struct {
+type RedisRepository struct {
 	Client *redis.Client
-}
-
-type FindAllPage struct {
-	Size   uint
-	Offset uint
-}
-
-type FindResult struct {
-	Orders []model.Order
-	Cursor uint64
 }
 
 func orderIDKey(id uint64) string {
 	return fmt.Sprintf("order:%d", id)
 }
 
-func (r *RedisRepo) Insert(ctx context.Context, order model.Order) error {
+func (r *RedisRepository) Insert(ctx context.Context, order model.Order) error {
 	if data, err := json.Marshal(order); err != nil {
 		return fmt.Errorf("failed to encode order: %w", err)
 	} else {
@@ -56,11 +46,11 @@ func (r *RedisRepo) Insert(ctx context.Context, order model.Order) error {
 	return nil
 }
 
-func (r *RedisRepo) FindByID(ctx context.Context, id uint64) (model.Order, error) {
+func (r *RedisRepository) FindByID(ctx context.Context, id uint64) (model.Order, error) {
 	key := orderIDKey((id))
 	value, err := r.Client.Get(ctx, key).Result()
 	if errors.Is(err, redis.Nil) {
-		return model.Order{}, ErrNotExist
+		return model.Order{}, api_errors.ErrNotExist
 	} else if err != nil {
 		return model.Order{}, fmt.Errorf("get order: %w", err)
 	}
@@ -72,7 +62,7 @@ func (r *RedisRepo) FindByID(ctx context.Context, id uint64) (model.Order, error
 	return order, nil
 }
 
-func (r *RedisRepo) DeleteById(ctx context.Context, id uint64) error {
+func (r *RedisRepository) DeleteByID(ctx context.Context, id uint64) error {
 	key := orderIDKey(id)
 
 	txn := r.Client.TxPipeline()
@@ -80,7 +70,7 @@ func (r *RedisRepo) DeleteById(ctx context.Context, id uint64) error {
 	err := txn.Del(ctx, key).Err()
 	if errors.Is(err, redis.Nil) {
 		txn.Discard()
-		return ErrNotExist
+		return api_errors.ErrNotExist
 	} else if err != nil {
 		txn.Discard()
 		return fmt.Errorf("get order: %w", err)
@@ -98,14 +88,14 @@ func (r *RedisRepo) DeleteById(ctx context.Context, id uint64) error {
 	return nil
 }
 
-func (r *RedisRepo) Update(ctx context.Context, order model.Order) error {
+func (r *RedisRepository) Update(ctx context.Context, order model.Order) error {
 	if data, err := json.Marshal(order); err != nil {
 		return fmt.Errorf("failed to encode order: %w", err)
 	} else {
 		key := orderIDKey(order.OrderID)
 		err := r.Client.SetXX(ctx, key, string(data), 0).Err()
 		if errors.Is(err, redis.Nil) {
-			return ErrNotExist
+			return api_errors.ErrNotExist
 		} else if err != nil {
 			return fmt.Errorf("set ordder: %w", err)
 		}
@@ -114,23 +104,23 @@ func (r *RedisRepo) Update(ctx context.Context, order model.Order) error {
 	return nil
 }
 
-func (r *RedisRepo) FindAll(ctx context.Context, page FindAllPage) (FindResult, error) {
+func (r *RedisRepository) FindAll(ctx context.Context, page types.FindAllPage) (types.FindResult, error) {
 	res := r.Client.SScan(ctx, "orders", uint64(page.Offset), "*", int64(page.Size))
 
 	keys, cursor, err := res.Result()
 	if err != nil {
-		return FindResult{}, fmt.Errorf("failed to get order ids: %w", err)
+		return types.FindResult{}, fmt.Errorf("failed to get order ids: %w", err)
 	}
 
 	if len(keys) == 0 {
-		return FindResult{
+		return types.FindResult{
 			Orders: []model.Order{},
 		}, nil
 	}
 
 	xs, err := r.Client.MGet(ctx, keys...).Result()
 	if err != nil {
-		return FindResult{}, fmt.Errorf("failed to get orders: %w", err)
+		return types.FindResult{}, fmt.Errorf("failed to get orders: %w", err)
 	}
 
 	orders := make([]model.Order, len(xs))
@@ -139,13 +129,13 @@ func (r *RedisRepo) FindAll(ctx context.Context, page FindAllPage) (FindResult, 
 		var order model.Order
 
 		if err := json.Unmarshal([]byte(x), &order); err != nil {
-			return FindResult{}, fmt.Errorf("failed to decode order json: %w", err)
+			return types.FindResult{}, fmt.Errorf("failed to decode order json: %w", err)
 		}
 
 		orders[i] = order
 	}
 
-	return FindResult{
+	return types.FindResult{
 		Orders: orders,
 		Cursor: cursor,
 	}, nil

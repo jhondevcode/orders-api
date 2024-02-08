@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,12 +12,21 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	api_errors "github.com/jhondevcode/orders-api/errors"
 	"github.com/jhondevcode/orders-api/model"
-	"github.com/jhondevcode/orders-api/repository/order"
+	"github.com/jhondevcode/orders-api/types"
 )
 
+type Repository interface {
+	Insert(ctx context.Context, order model.Order) error
+	FindByID(ctx context.Context, id uint64) (model.Order, error)
+	DeleteByID(ctx context.Context, id uint64) error
+	Update(ctx context.Context, order model.Order) error
+	FindAll(ctx context.Context, page types.FindAllPage) (types.FindResult, error)
+}
+
 type Order struct {
-	Repo *order.RedisRepo
+	Repo Repository
 }
 
 func (o *Order) Create(w http.ResponseWriter, r *http.Request) {
@@ -74,7 +84,7 @@ func (o *Order) List(w http.ResponseWriter, r *http.Request) {
 
 	const size = 50
 
-	res, err := o.Repo.FindAll(r.Context(), order.FindAllPage{
+	res, err := o.Repo.FindAll(r.Context(), types.FindAllPage{
 		Size:   size,
 		Offset: uint(cursor),
 	})
@@ -121,7 +131,7 @@ func (o *Order) GetById(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ord, err := o.Repo.FindByID(r.Context(), orderID)
-	if errors.Is(err, order.ErrNotExist) {
+	if errors.Is(err, api_errors.ErrNotExist) {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	} else if err != nil {
@@ -160,7 +170,7 @@ func (o *Order) UpdateById(w http.ResponseWriter, r *http.Request) {
 	}
 
 	theOrder, err := o.Repo.FindByID(r.Context(), orderID)
-	if errors.Is(err, order.ErrNotExist) {
+	if errors.Is(err, api_errors.ErrNotExist) {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	} else if err != nil {
@@ -217,9 +227,9 @@ func (o *Order) DeleteById(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	} else {
-		err := o.Repo.DeleteById(r.Context(), orderID)
+		err := o.Repo.DeleteByID(r.Context(), orderID)
 		fmt.Println(err)
-		if errors.Is(err, order.ErrNotExist) {
+		if errors.Is(err, api_errors.ErrNotExist) {
 			fmt.Println("order not fount")
 			w.WriteHeader(http.StatusNotFound)
 			return
@@ -233,5 +243,4 @@ func (o *Order) DeleteById(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-
 }
